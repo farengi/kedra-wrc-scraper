@@ -7,7 +7,14 @@ from dataclasses import dataclass
 
 
 @dataclass
-class ScraperItem:
+class DecisionItem:
     # define the fields for your item here like:
     # name: str | None = None
-    pass
+    body: str
+    identifier: str
+    description: str
+    date: str
+    partition_date: str
+    source_url: str
+    detail_url: str | None
+    scraped_at: str

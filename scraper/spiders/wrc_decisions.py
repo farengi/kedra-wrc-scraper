@@ -1,11 +1,10 @@
 from datetime import datetime, timezone
-
 import scrapy
 from scrapy.exceptions import CloseSpider
 from scrapy.http import FormRequest
+from scraper.items import DecisionItem
 
-
-class WrcDecisionsSpider(scrapy.Spider ):
+class WrcDecisionsSpider(scrapy.Spider):
     name = "wrc_decisions"
     allowed_domains = ["www.workplacerelations.ie"]
     start_urls = [
@@ -29,7 +28,8 @@ class WrcDecisionsSpider(scrapy.Spider ):
             "ctl00$ContentPlaceHolder_Main$CB2$CB2_3",
             "15376",
         ),
-    }    # identified by inspecting the WRC search form's HTML and mapping each checkbox ID/name to its visible body label.
+    }
+    # identified by inspecting the WRC search form's HTML and mapping each checkbox ID/name to its visible body label.
 
 
     def __init__(
@@ -47,13 +47,15 @@ class WrcDecisionsSpider(scrapy.Spider ):
             raise CloseSpider(
                 "Required arguments: start_date, end_date, body, "
                 "and partition_date"
-            )# these values are required so each crawl has a clear scope
+            )
+        # these values are required so each crawl has a clear scope
 
         if body not in self.BODY_VALUES:
             valid_bodies = ", ".join(self.BODY_VALUES)
             raise CloseSpider(
                 f"Unknown body '{body}'. Choose one of: {valid_bodies}"
-            )# stop early if an invalid body was passed
+            )
+        # stop early if an invalid body was passed
 
         self.start_date = start_date
         self.end_date = end_date
@@ -79,26 +81,32 @@ class WrcDecisionsSpider(scrapy.Spider ):
         )
 
     def parse_results(self, response):
-        for result in response.css("li.each-item"): # loop through every decision shown on the results page
+        for result in response.css("li.each-item"):
+         # loop through every decision shown on the results page
             identifier = result.css("h2.title a::text").get()
             decision_date = result.css("span.date::text").get()
             description = result.css("p.description::attr(title)").get()
             if description:
-                 description = " ".join(description.split()) 
+                 description = " ".join(description.split())
             # collapses all whitespace/newlines into single spaces
             href = result.css("h2.title a::attr(href)").get()
 
-            yield {
-                "body": self.body, #tagging which body this came from (needed once everything's mixed into one Mongo collection)
-                "identifier": identifier,
-                "description": description,
-                "date": decision_date,
-                "partition_date": self.partition_date,
-                "source_url": response.url, # good for debugging and tracing back to the original search results page
-                "detail_url": response.urljoin(href) if href else None,
-                "scraped_at": self.scraped_at, # when this spider run started for tracking and debugging
-            }# extract the metadata needed for each decision
+            yield DecisionItem(
+                body=self.body,
+                #tagging which body this came from (needed once everything's mixed into one Mongo collection)
+                identifier=identifier,
+                description=description,
+                date=decision_date,
+                partition_date=self.partition_date,
+                source_url=response.url,
+                # good for debugging and tracing back to the original search results page
+                detail_url=response.urljoin(href) if href else None,
+                scraped_at=self.scraped_at,
+                # when this spider run started for tracking and debugging
+            )
+            # extract the metadata needed for each decision
 
         next_page = response.css("a.next::attr(href)").get()
-        if next_page: #pagniation
+        if next_page:
+        #pagniation
             yield response.follow(next_page, callback=self.parse_results)

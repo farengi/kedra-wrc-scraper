@@ -7,6 +7,11 @@
 #     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 BOT_NAME = "scraper"
 
 SPIDER_MODULES = ["scraper.spiders"]
@@ -59,9 +64,13 @@ DOWNLOAD_DELAY = 1
 
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
-#ITEM_PIPELINES = {
-#    "scraper.pipelines.ScraperPipeline": 300,
-#}
+ITEM_PIPELINES = {
+    "scraper.pipelines.MongoPipeline": 300,
+}
+
+MONGO_URI = os.getenv("MONGO_URI")
+MONGO_DATABASE = os.getenv("MONGO_DATABASE")
+MONGO_COLLECTION = os.getenv("MONGO_COLLECTION")
 
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/autothrottle.html
@@ -73,13 +82,13 @@ AUTOTHROTTLE_START_DELAY = 1 # Start with a 1-second delay between requests. We 
 # if testing shows that the website can handle more or needs less traffic.
 
 
-AUTOTHROTTLE_MAX_DELAY = 10 # Don't let AutoThrottle increase the delay beyond 10 seconds. 
+AUTOTHROTTLE_MAX_DELAY = 10 # Don't let AutoThrottle increase the delay beyond 10 seconds.
 # This gives # us a reasonable upper limit if the server starts responding slowly.
 
 # The average number of requests Scrapy should be sending in parallel to
 # each remote server
-AUTOTHROTTLE_TARGET_CONCURRENCY = 2.0 # Aim for around 2 requests being processed at the same time on average. 
-# This is a conservative starting point, and we can increase it after 
+AUTOTHROTTLE_TARGET_CONCURRENCY = 2.0 # Aim for around 2 requests being processed at the same time on average.
+# This is a conservative starting point, and we can increase it after
 # testing the scraper.
 
 # Enable and configure HTTP caching (disabled by default)
@@ -95,7 +104,7 @@ FEED_EXPORT_ENCODING = "utf-8"
 
 
 RETRY_ENABLED = True # Retry requests that fail temporarily instead of giving up immediately.
- # This helps prevent temporary network or server errors from causing lost data. 
-RETRY_TIMES = 3 # Try a failed request up to 3 more times before treating it as a failure. 
+ # This helps prevent temporary network or server errors from causing lost data.
+RETRY_TIMES = 3 # Try a failed request up to 3 more times before treating it as a failure.
 RETRY_HTTP_CODES = [500, 502, 503, 504, 429, 408] # Retry errors that are usually temporary, such as server errors,
  # rate limiting (429), and request timeouts (408).
