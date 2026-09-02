@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 from log_utils import get_logger
 
 import boto3
+from botocore.exceptions import ClientError
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -100,7 +101,7 @@ def iter_matching_records(collection, start: date, end: date):
 
 def transform_record(record, s3, raw_bucket, curated_bucket):
     """Read one raw object, transform it, and upload the curated object."""
-    raw_key = record["file_path"]
+    raw_key = record.get("file_path")
     if not raw_key:
         raise ValueError(
             f"No file_path on record {record.get('identifier')!r} — "
@@ -186,6 +187,14 @@ def main() -> None:
         aws_secret_access_key=minio_secret_key,
     )
 
+    try:
+        s3.head_bucket(Bucket=curated_bucket)
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") == "404":
+            s3.create_bucket(Bucket=curated_bucket)
+        else:
+            raise
+
     transformed = 0
     failed = 0
 
@@ -234,6 +243,7 @@ def main() -> None:
                 }})
     finally:
         mongo_client.close()
+        s3.close()
 
     logger.info("Transform run completed", extra={"extra_data": {
         "start_date": args.start_date,

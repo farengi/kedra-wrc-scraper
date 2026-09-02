@@ -7,3 +7,4 @@ requests-file==3.0.1
 beautifulsoup4==4.15.0
 dagster==1.13.20
 dagster-webserver==1.13.20
+pytest==7.4.4
