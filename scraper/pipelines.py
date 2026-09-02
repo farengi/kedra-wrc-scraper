@@ -39,16 +39,20 @@ class MongoPipeline:
             unique=True,
         )
 
+    # scraper/pipelines.py — MongoPipeline.process_item
+
     def process_item(self, item, spider):
         document = ItemAdapter(item).asdict()
+        update_fields = {k: v for k, v in document.items() if v is not None}
 
         self.collection.update_one(
             {"body": document["body"], "identifier": document["identifier"]},
-            {"$set": document},
+            {"$set": update_fields},
             upsert=True,
         )
 
         return item
+        
 
     def close_spider(self, spider):
         if self.client is not None:
@@ -141,9 +145,9 @@ class MinioPipeline:
 
         content_type = adapter.get("content_type") or "application/octet-stream"
         detail_url = adapter.get("detail_url") or ""
-        extension = "pdf" if "pdf" in content_type or detail_url.lower().endswith(".pdf") else "html"
+        extension = "pdf" if "pdf" in content_type or detail_url.lower().endswith(".pdf") else "docx" if "docx" in content_type or detail_url.lower().endswith(".docx") else "doc" if "doc" in content_type or detail_url.lower().endswith(".doc") else "html"
         file_key = f"{adapter['body']}/{adapter['identifier']}.{extension}"
-
+        
         try:
             self.s3.put_object(
                 Bucket=self.bucket_raw,

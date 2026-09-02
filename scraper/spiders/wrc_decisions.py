@@ -3,6 +3,10 @@ import scrapy
 from scrapy.exceptions import CloseSpider
 from scrapy.http import FormRequest
 from scraper.items import DecisionItem
+from log_utils import get_logger
+
+json_logger = get_logger("wrc_decisions")
+
 
 class WrcDecisionsSpider(scrapy.Spider):
     name = "wrc_decisions"
@@ -30,7 +34,6 @@ class WrcDecisionsSpider(scrapy.Spider):
         ),
     }
     # identified by inspecting the WRC search form's HTML and mapping each checkbox ID/name to its visible body label.
-
 
     def __init__(
         self,
@@ -63,6 +66,19 @@ class WrcDecisionsSpider(scrapy.Spider):
         self.partition_date = partition_date
         self.scraped_at = datetime.now(timezone.utc).isoformat()
 
+        # counters for the end-of-run summary
+        self.records_found = 0
+        self.records_scraped = 0
+        self.records_failed = 0
+
+        json_logger.info("Spider started", extra={"extra_data": {
+            "event": "spider_started",
+            "partition_date": self.partition_date,
+            "body": self.body,
+            "start_date": self.start_date,
+            "end_date": self.end_date,
+        }})
+
     def parse(self, response):
         body_name, body_value = self.BODY_VALUES[self.body]
 
@@ -82,6 +98,8 @@ class WrcDecisionsSpider(scrapy.Spider):
 
     def parse_results(self, response):
         for result in response.css("li.each-item"):
+            self.records_found += 1
+
             identifier = result.css("h2.title a::text").get()
             decision_date = result.css("span.date::text").get()
             description = result.css("p.description::attr(title)").get()
@@ -110,6 +128,16 @@ class WrcDecisionsSpider(scrapy.Spider):
                 )
             else:
                 # no document to fetch — still yield the metadata-only item
+                json_logger.warning("No detail_url for record", extra={"extra_data": {
+                    "event": "download_failed",
+                    "partition_date": self.partition_date,
+                    "body": self.body,
+                    "identifier": identifier,
+                    "url": None,
+                    "error_code": None,
+                    "reason": "missing detail_url",
+                }})
+                self.records_failed += 1
                 yield DecisionItem(**record_meta)
 
         next_page = response.css("a.next::attr(href)").get()
@@ -117,6 +145,7 @@ class WrcDecisionsSpider(scrapy.Spider):
             yield response.follow(next_page, callback=self.parse_results)
 
     def parse_document(self, response, record_meta):
+        self.records_scraped += 1
         yield DecisionItem(
             **record_meta,
             file_bytes=response.body,
@@ -129,8 +158,25 @@ class WrcDecisionsSpider(scrapy.Spider):
         status = getattr(failure.value, "response", None)
         status_code = status.status if status is not None else None
 
-        self.logger.warning(
-            f"Failed to download {request.url} for {record_meta.get('identifier')}: "
-            f"{failure.value} (status={status_code})"
-        )
+        self.records_failed += 1
+        json_logger.warning("Download failed", extra={"extra_data": {
+            "event": "download_failed",
+            "partition_date": self.partition_date,
+            "body": self.body,
+            "identifier": record_meta.get("identifier"),
+            "url": request.url,
+            "error_code": status_code,
+            "reason": str(failure.value),
+        }})
         yield DecisionItem(**record_meta)  # file_bytes/content_type stay None
+
+    def closed(self, reason):
+        json_logger.info("Spider run summary", extra={"extra_data": {
+            "event": "run_summary",
+            "partition_date": self.partition_date,
+            "body": self.body,
+            "records_found": self.records_found,
+            "records_scraped": self.records_scraped,
+            "records_failed": self.records_failed,
+            "close_reason": reason,
+        }})

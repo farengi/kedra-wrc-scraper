@@ -17,9 +17,10 @@ class JsonFormatter(logging.Formatter):
 
 def get_logger(name):
     logger = logging.getLogger(name)
-    if not logger.handlers:  # avoid adding duplicate handlers if called twice
+    if not logger.handlers:
         logger.setLevel(logging.INFO)
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(JsonFormatter())
         logger.addHandler(handler)
+        logger.propagate = False  # avoid double-logging through Scrapy's root handler
     return logger

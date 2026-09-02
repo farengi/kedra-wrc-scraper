@@ -101,6 +101,12 @@ def iter_matching_records(collection, start: date, end: date):
 def transform_record(record, s3, raw_bucket, curated_bucket):
     """Read one raw object, transform it, and upload the curated object."""
     raw_key = record["file_path"]
+    if not raw_key:
+        raise ValueError(
+            f"No file_path on record {record.get('identifier')!r} — "
+            "document was never successfully downloaded"
+        )
+
     raw_object = s3.get_object(Bucket=raw_bucket, Key=raw_key)
     raw_bytes = raw_object["Body"].read()
 
