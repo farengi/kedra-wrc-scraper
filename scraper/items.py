@@ -16,5 +16,7 @@ class DecisionItem:
     date: str
     partition_date: str
     source_url: str
-    detail_url: str | None
     scraped_at: str
+    detail_url: str | None = None
+    file_path: str | None = None
+    file_hash: str | None = None

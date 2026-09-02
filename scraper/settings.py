@@ -28,9 +28,9 @@ ROBOTSTXT_OBEY = True #
 
 # Concurrency and throttling settings
 #CONCURRENT_REQUESTS = 16
-CONCURRENT_REQUESTS_PER_DOMAIN = 4 # Limit the number of requests we send to the same website at once.
-# Starting with 4 keeps the scraper reasonably fast without being too aggressive.
-DOWNLOAD_DELAY = 1
+CONCURRENT_REQUESTS_PER_DOMAIN = int(os.getenv("CONCURRENT_REQUESTS_PER_DOMAIN")) # Limit the number of requests we send to the same website at once.
+DOWNLOAD_DELAY = float(os.getenv("DOWNLOAD_DELAY"))
+DOWNLOAD_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT_SECONDS"))
 
 # Disable cookies (enabled by default)
 #COOKIES_ENABLED = False
@@ -65,29 +65,35 @@ DOWNLOAD_DELAY = 1
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 ITEM_PIPELINES = {
-    "scraper.pipelines.MongoPipeline": 300,
+    "scraper.pipelines.MongoPipeline": 400,
+    "scraper.pipelines.MinioPipeline": 300, # runs first bc of file_hash and file_path
 }
 
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DATABASE = os.getenv("MONGO_DATABASE")
 MONGO_COLLECTION = os.getenv("MONGO_COLLECTION")
 
+
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
+MINIO_BUCKET_RAW = os.getenv("MINIO_BUCKET_RAW")
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/autothrottle.html
 
 AUTOTHROTTLE_ENABLED = True # lets scrapy adjust the request speed automatically based on how the # server responds
 # which better than choosing one fixed delay ourselves.
 # The initial download delay
-AUTOTHROTTLE_START_DELAY = 1 # Start with a 1-second delay between requests. We can adjust this later
-# if testing shows that the website can handle more or needs less traffic.
+AUTOTHROTTLE_START_DELAY = float(os.getenv("AUTOTHROTTLE_START_DELAY"))
+ # We can adjust this later if testing shows that the website can handle more or needs less traffic.
 
 
-AUTOTHROTTLE_MAX_DELAY = 10 # Don't let AutoThrottle increase the delay beyond 10 seconds.
+AUTOTHROTTLE_MAX_DELAY = float(os.getenv("AUTOTHROTTLE_MAX_DELAY"))
 # This gives # us a reasonable upper limit if the server starts responding slowly.
 
 # The average number of requests Scrapy should be sending in parallel to
 # each remote server
-AUTOTHROTTLE_TARGET_CONCURRENCY = 2.0 # Aim for around 2 requests being processed at the same time on average.
+AUTOTHROTTLE_TARGET_CONCURRENCY = float(os.getenv("AUTOTHROTTLE_TARGET_CONCURRENCY")) # Aim for around 2 requests being processed at the same time on average.
 # This is a conservative starting point, and we can increase it after
 # testing the scraper.
 
@@ -105,6 +111,6 @@ FEED_EXPORT_ENCODING = "utf-8"
 
 RETRY_ENABLED = True # Retry requests that fail temporarily instead of giving up immediately.
  # This helps prevent temporary network or server errors from causing lost data.
-RETRY_TIMES = 3 # Try a failed request up to 3 more times before treating it as a failure.
+RETRY_TIMES = int(os.getenv("RETRY_TIMES")) # Try a failed request up to x more times before treating it as a failure.
 RETRY_HTTP_CODES = [500, 502, 503, 504, 429, 408] # Retry errors that are usually temporary, such as server errors,
  # rate limiting (429), and request timeouts (408).
