@@ -98,13 +98,10 @@ class MinioPipeline:
             aws_access_key_id=self.access_key,
             aws_secret_access_key=self.secret_key,
         )
-
-        # make sure the bucket exists before we try to upload anything to it.
         try:
             self.s3.head_bucket(Bucket=self.bucket_raw)
         except ClientError as e:
-            error_code = e.response.get("Error", {}).get("Code")
-            if error_code == "404":
+            if e.response.get("Error", {}).get("Code") == "404":
                 self.s3.create_bucket(Bucket=self.bucket_raw)
             else:
                 raise
@@ -122,44 +119,29 @@ class MinioPipeline:
 
     def process_item(self, item, spider):
         adapter = ItemAdapter(item)
-        detail_url = adapter.get("detail_url")
+        file_bytes = adapter.get("file_bytes")
+        adapter.pop("file_bytes", None)  # captured locally; strip immediately so no path can leak raw bytes into MongoPipeline
 
-        if not detail_url:
+        if not file_bytes:
             spider.logger.warning(
-                f"No detail_url for {adapter.get('identifier')}, skipping download"
+                f"No file downloaded for {adapter.get('identifier')}, skipping upload"
             )
             return item
 
-        # idempotency: if we've already stored a file for this record, skip
-        # re-downloading it. treat "already has a file_hash" as "unchanged" 
         existing = self.mongo_collection.find_one(
             {"body": adapter["body"], "identifier": adapter["identifier"]}
         )
-        if existing and existing.get("file_hash"):
-            spider.logger.info(
-                f"Skipping download for {adapter['identifier']} — already stored"
-            )
-            adapter["file_path"] = existing.get("file_path")
-            adapter["file_hash"] = existing.get("file_hash")
-            return item
-
-        try:
-            response = requests.get(detail_url, timeout=30)
-            response.raise_for_status()
-        except requests.RequestException as e:
-            spider.logger.warning(
-                f"Failed to download {detail_url} for {adapter.get('identifier')}: {e}"
-            )
-            return item
-
-        content_type = response.headers.get("Content-Type", "") or "application/octet-stream"
-        if "pdf" in content_type or detail_url.lower().endswith(".pdf"):
-            extension = "pdf"
-        else:
-            extension = "html"
-
-        file_bytes = response.content
         file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+        if existing and existing.get("file_hash") == file_hash:
+            spider.logger.info(f"Unchanged, skipping upload for {adapter['identifier']}")
+            adapter["file_path"] = existing.get("file_path")
+            adapter["file_hash"] = file_hash
+            return item
+
+        content_type = adapter.get("content_type") or "application/octet-stream"
+        detail_url = adapter.get("detail_url") or ""
+        extension = "pdf" if "pdf" in content_type or detail_url.lower().endswith(".pdf") else "html"
         file_key = f"{adapter['body']}/{adapter['identifier']}.{extension}"
 
         try:
@@ -167,15 +149,12 @@ class MinioPipeline:
                 Bucket=self.bucket_raw,
                 Key=file_key,
                 Body=file_bytes,
-                ContentType=content_type or "application/octet-stream",
+                ContentType=content_type,
             )
         except ClientError as e:
-            spider.logger.warning(
-                f"Failed to upload {file_key} to MinIO: {e}"
-            )
+            spider.logger.warning(f"Failed to upload {file_key} to MinIO: {e}")
             return item
 
         adapter["file_path"] = file_key
         adapter["file_hash"] = file_hash
-
         return item

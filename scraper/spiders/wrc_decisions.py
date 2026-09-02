@@ -82,31 +82,55 @@ class WrcDecisionsSpider(scrapy.Spider):
 
     def parse_results(self, response):
         for result in response.css("li.each-item"):
-         # loop through every decision shown on the results page
             identifier = result.css("h2.title a::text").get()
             decision_date = result.css("span.date::text").get()
             description = result.css("p.description::attr(title)").get()
             if description:
-                 description = " ".join(description.split())
-            # collapses all whitespace/newlines into single spaces
+                description = " ".join(description.split())
             href = result.css("h2.title a::attr(href)").get()
+            detail_url = response.urljoin(href) if href else None
 
-            yield DecisionItem(
+            record_meta = dict(
                 body=self.body,
-                #tagging which body this came from (needed once everything's mixed into one Mongo collection)
                 identifier=identifier,
                 description=description,
                 date=decision_date,
                 partition_date=self.partition_date,
                 source_url=response.url,
-                # good for debugging and tracing back to the original search results page
-                detail_url=response.urljoin(href) if href else None,
+                detail_url=detail_url,
                 scraped_at=self.scraped_at,
-                # when this spider run started for tracking and debugging
             )
-            # extract the metadata needed for each decision
+
+            if detail_url:
+                yield scrapy.Request(
+                    detail_url,
+                    callback=self.parse_document,
+                    cb_kwargs={"record_meta": record_meta},
+                    errback=self.handle_download_error,
+                )
+            else:
+                # no document to fetch — still yield the metadata-only item
+                yield DecisionItem(**record_meta)
 
         next_page = response.css("a.next::attr(href)").get()
         if next_page:
-        #pagniation
             yield response.follow(next_page, callback=self.parse_results)
+
+    def parse_document(self, response, record_meta):
+        yield DecisionItem(
+            **record_meta,
+            file_bytes=response.body,
+            content_type=response.headers.get("Content-Type", b"").decode(errors="ignore"),
+        )
+
+    def handle_download_error(self, failure):
+        request = failure.request
+        record_meta = request.cb_kwargs["record_meta"]
+        status = getattr(failure.value, "response", None)
+        status_code = status.status if status is not None else None
+
+        self.logger.warning(
+            f"Failed to download {request.url} for {record_meta.get('identifier')}: "
+            f"{failure.value} (status={status_code})"
+        )
+        yield DecisionItem(**record_meta)  # file_bytes/content_type stay None

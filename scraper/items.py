@@ -20,3 +20,5 @@ class DecisionItem:
     detail_url: str | None = None
     file_path: str | None = None
     file_hash: str | None = None
+    file_bytes: bytes | None = None
+    content_type: str | None = None
