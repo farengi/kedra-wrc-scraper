@@ -101,6 +101,15 @@ class WrcDecisionsSpider(scrapy.Spider):
             self.records_found += 1
 
             identifier = result.css("h2.title a::text").get()
+            if not identifier:
+                json_logger.warning("Missing identifier, skipping record", extra={"extra_data": {
+                    "event": "extraction_failed",
+                    "partition_date": self.partition_date,
+                    "body": self.body,
+                    "url": response.url,
+                }})
+                self.records_failed += 1
+                continue  # skip this <li>, move to the next one in the loop
             decision_date = result.css("span.date::text").get()
             description = result.css("p.description::attr(title)").get()
             if description:

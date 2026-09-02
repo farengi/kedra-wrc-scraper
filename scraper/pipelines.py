@@ -7,10 +7,15 @@
 # useful for handling different item types with a single interface
 from itemadapter import ItemAdapter
 from pymongo import ASCENDING, MongoClient
+from pymongo.errors import PyMongoError
 import boto3
 import hashlib
+import re
 import requests
 from botocore.exceptions import ClientError
+from log_utils import get_logger
+
+json_logger = get_logger("pipelines")
 
 
 class MongoPipeline:
@@ -45,11 +50,19 @@ class MongoPipeline:
         document = ItemAdapter(item).asdict()
         update_fields = {k: v for k, v in document.items() if v is not None}
 
-        self.collection.update_one(
-            {"body": document["body"], "identifier": document["identifier"]},
-            {"$set": update_fields},
-            upsert=True,
-        )
+        try:
+            self.collection.update_one(
+                {"body": document["body"], "identifier": document["identifier"]},
+                {"$set": update_fields},
+                upsert=True,
+            )
+        except PyMongoError as e:
+            json_logger.warning("Mongo write failed", extra={"extra_data": {
+                "event": "mongo_write_failed",
+                "body": document.get("body"),
+                "identifier": document.get("identifier"),
+                "error": str(e),
+            }})
 
         return item
         
@@ -132,9 +145,19 @@ class MinioPipeline:
             )
             return item
 
-        existing = self.mongo_collection.find_one(
-            {"body": adapter["body"], "identifier": adapter["identifier"]}
-        )
+        try:
+            existing = self.mongo_collection.find_one(
+                {"body": adapter["body"], "identifier": adapter["identifier"]}
+            )
+        except PyMongoError as e:
+            json_logger.warning("Mongo read failed", extra={"extra_data": {
+                "event": "mongo_read_failed",
+                "body": adapter.get("body"),
+                "identifier": adapter.get("identifier"),
+                "error": str(e),
+            }})
+            return item
+
         file_hash = hashlib.sha256(file_bytes).hexdigest()
 
         if existing and existing.get("file_hash") == file_hash:
@@ -146,7 +169,8 @@ class MinioPipeline:
         content_type = adapter.get("content_type") or "application/octet-stream"
         detail_url = adapter.get("detail_url") or ""
         extension = "pdf" if "pdf" in content_type or detail_url.lower().endswith(".pdf") else "docx" if "docx" in content_type or detail_url.lower().endswith(".docx") else "doc" if "doc" in content_type or detail_url.lower().endswith(".doc") else "html"
-        file_key = f"{adapter['body']}/{adapter['identifier']}.{extension}"
+        safe_identifier = re.sub(r"[\\/]", "_", adapter["identifier"].strip())
+        file_key = f"{adapter['body']}/{safe_identifier}.{extension}"
         
         try:
             self.s3.put_object(
