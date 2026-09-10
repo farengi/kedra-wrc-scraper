@@ -105,7 +105,7 @@ Dates accept `D/M/YYYY` or `YYYY-MM-DD`.
 scraper/
   spiders/wrc_decisions.py   # Scrapy spider: search form + pagination
   items.py                   # DecisionItem dataclass
-  pipelines.py                # MongoPipeline (metadata), MinioPipeline (raw file download)
+  pipelines.py                # async MongoPipeline (metadata), MinioPipeline (raw file download)
   settings.py                 # All Scrapy settings, sourced from env vars
 transform/
   transform.py                 # Landing Zone -> Curated Zone transformation

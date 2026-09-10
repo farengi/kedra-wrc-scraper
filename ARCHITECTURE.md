@@ -9,7 +9,7 @@ WRC website
     v
 Scrapy spider  ---- document Request/Response (own crawl) ---->  MinIO / wrc-raw
     |                                                                  |
-    | metadata (incl. file_path, file_hash)                           |
+    | async item pipelines; MinIO first adds file_path/file_hash       |
     v                                                                  |
 MongoDB / landing_metadata                                             |
     |                                                                  |
@@ -17,6 +17,29 @@ MongoDB / landing_metadata                                             |
     v                                                                  v
 MongoDB / curated_metadata  <---------------------------  MinIO / wrc-curated
 ```
+## Asynchronous persistence
+
+Scrapy is configured to use the asyncio-compatible Twisted reactor. The item
+pipelines define asynchronous lifecycle and processing methods. MongoDB
+operations use PyMongo's `AsyncMongoClient`, while MinIO operations use the
+asynchronous S3 client provided by `aioboto3`.
+
+This prevents synchronous database and object-storage waits from blocking the
+Scrapy reactor. Each item still follows the required dependency order:
+
+```text
+DecisionItem
+    |
+    v
+MinioPipeline
+    |-- await MongoDB find_one
+    |-- await MinIO put_object when the hash changed
+    `-- add file_path and file_hash
+    |
+    v
+MongoPipeline
+    `-- await MongoDB update_one(upsert=True)
+
 
 ## Partitioning
 
@@ -74,8 +97,12 @@ Three things would need to change, concretely: (1) `BODY_VALUES`-style per-sourc
 the spider into a small `sources/<name>.py` module per source, each exposing the same interface (form
 fill, result parsing, pagination) so the spider becomes a thin driver over pluggable source adapters;
 (2) Dagster partitions become `(source, month)` instead of just `month`, so one slow or broken source's
-retries don't block materializing the others; (3) `transform.py`'s per-partition Mongo query moves from
-a full collection scan to an indexed filter on `partition_date` — cheap at 1,000 documents, real cost at
-50 sources × years of history. None of this requires a new datastore or orchestrator — Mongo, MinIO, and
-Dagster all scale along the dimension that matters here, which is source count and partition count, not
-raw document volume.
+retries don't block materializing the others; (3) store each decision date in a normalized MongoDB-queryable field at
+ingestion time, create an index on that field (for example,
+`(body, decision_date)`), and have `transform.py` query that date range
+directly instead of calling `collection.find()` and parsing/filtering every
+record in Python.
+None of this requires a new datastore or orchestrator. The asynchronous pipelines
+prevent MongoDB and MinIO waits from blocking a crawler process, while MongoDB,
+MinIO, and Dagster can be scaled independently as source count, partition count,
+and document volume grow.

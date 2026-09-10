@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 
 from scraper.pipelines import MinioPipeline
@@ -7,7 +8,7 @@ class FakeCollection:
     def __init__(self, existing ):
         self.existing = existing
 
-    def find_one(self, query):
+    async def find_one(self, query):
         return self.existing
 
 
@@ -15,7 +16,7 @@ class FakeS3:
     def __init__(self):
         self.put_calls = []
 
-    def put_object(self, **kwargs):
+    async def put_object(self, **kwargs):
         self.put_calls.append(kwargs)
 
 
@@ -67,7 +68,9 @@ def test_unchanged_file_is_not_reuploaded():
         "file_bytes": payload,
     }
 
-    returned = pipeline.process_item(item, FakeSpider( ))
+    returned = asyncio.run(
+    pipeline.process_item(item, FakeSpider())
+)
 
     assert returned["file_path"] == "labour_court/ABC123.pdf"
     assert returned["file_hash"] == digest
@@ -95,7 +98,7 @@ def test_changed_file_is_uploaded_with_hash_and_path():
         "file_bytes": payload,
     }
 
-    returned = pipeline.process_item(item, FakeSpider( ))
+    returned = asyncio.run(pipeline.process_item(item, FakeSpider()))
 
     assert returned["file_hash"] == hashlib.sha256(payload).hexdigest()
     assert returned["file_path"] == "labour_court/ABC123.pdf"

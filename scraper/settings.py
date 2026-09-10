@@ -82,6 +82,10 @@ ITEM_PIPELINES = {
     "scraper.pipelines.MinioPipeline": 300, # runs first bc of file_hash and file_path
 }
 
+TWISTED_REACTOR = (
+    "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
+)
+
 MONGO_URI = get_env("MONGO_URI")
 MONGO_DATABASE = get_env("MONGO_DATABASE")
 MONGO_COLLECTION = get_env("MONGO_COLLECTION")

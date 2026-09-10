@@ -6,14 +6,14 @@
 
 # useful for handling different item types with a single interface
 from itemadapter import ItemAdapter
-from pymongo import ASCENDING, MongoClient
+from pymongo import ASCENDING, AsyncMongoClient
 from pymongo.errors import PyMongoError
-import boto3
+import aioboto3
 import hashlib
 import re
-import requests
 from botocore.exceptions import ClientError
 from log_utils import get_logger
+
 
 json_logger = get_logger("pipelines")
 
@@ -34,24 +34,24 @@ class MongoPipeline:
             mongo_collection=crawler.settings.get("MONGO_COLLECTION"),
         )
 
-    def open_spider(self, spider):
-        self.client = MongoClient(self.mongo_uri)
+    async def open_spider(self, spider):
+        self.client = AsyncMongoClient(self.mongo_uri)
         database = self.client[self.mongo_database]
         self.collection = database[self.mongo_collection]
 
-        self.collection.create_index(
+        await self.collection.create_index(
             [("body", ASCENDING), ("identifier", ASCENDING)],
             unique=True,
         )
 
     # scraper/pipelines.py — MongoPipeline.process_item
 
-    def process_item(self, item, spider):
+    async def process_item(self, item, spider):
         document = ItemAdapter(item).asdict()
         update_fields = {k: v for k, v in document.items() if v is not None}
 
         try:
-            self.collection.update_one(
+            await self.collection.update_one(
                 {"body": document["body"], "identifier": document["identifier"]},
                 {"$set": update_fields},
                 upsert=True,
@@ -67,9 +67,9 @@ class MongoPipeline:
         return item
         
 
-    def close_spider(self, spider):
+    async def close_spider(self, spider):
         if self.client is not None:
-            self.client.close()
+            await self.client.close()
 
 # minor duplication we can join them into one pipeline but for now we will keep them separate
 
@@ -92,6 +92,8 @@ class MinioPipeline:
         self.mongo_database = mongo_database
         self.mongo_collection_name = mongo_collection
 
+        self.s3_session = None
+        self.s3_context = None
         self.s3 = None
         self.mongo_client = None
         self.mongo_collection = None
@@ -108,33 +110,41 @@ class MinioPipeline:
             mongo_collection=crawler.settings.get("MONGO_COLLECTION"),
         )
 
-    def open_spider(self, spider):
-        self.s3 = boto3.client(
+    async def open_spider(self, spider):
+
+        self.s3_session = aioboto3.Session()
+
+        self.s3_context = self.s3_session.client(
             "s3",
             endpoint_url=self.endpoint,
             aws_access_key_id=self.access_key,
             aws_secret_access_key=self.secret_key,
         )
+
+        self.s3 = await self.s3_context.__aenter__()
+
         try:
-            self.s3.head_bucket(Bucket=self.bucket_raw)
+            await self.s3.head_bucket(Bucket=self.bucket_raw)
         except ClientError as e:
             if e.response.get("Error", {}).get("Code") == "404":
-                self.s3.create_bucket(Bucket=self.bucket_raw)
+                await self.s3.create_bucket(Bucket=self.bucket_raw)
             else:
                 raise
 
-        self.mongo_client = MongoClient(self.mongo_uri)
+        self.mongo_client = AsyncMongoClient(self.mongo_uri)
         self.mongo_collection = self.mongo_client[self.mongo_database][
             self.mongo_collection_name
         ]
 
-    def close_spider(self, spider):
-        if self.s3 is not None:
-            self.s3.close()
-        if self.mongo_client is not None:
-            self.mongo_client.close()
+    async def close_spider(self, spider):
+        if self.s3_context is not None:
+            await self.s3_context.__aexit__(None, None, None)
 
-    def process_item(self, item, spider):
+        if self.mongo_client is not None:
+            await self.mongo_client.close()
+
+
+    async def process_item(self, item, spider):
         adapter = ItemAdapter(item)
         file_bytes = adapter.get("file_bytes")
         adapter.pop("file_bytes", None)  # captured locally; strip immediately so no path can leak raw bytes into MongoPipeline
@@ -146,7 +156,7 @@ class MinioPipeline:
             return item
 
         try:
-            existing = self.mongo_collection.find_one(
+            existing = await self.mongo_collection.find_one(
                 {"body": adapter["body"], "identifier": adapter["identifier"]}
             )
         except PyMongoError as e:
@@ -173,7 +183,7 @@ class MinioPipeline:
         file_key = f"{adapter['body']}/{safe_identifier}.{extension}"
         
         try:
-            self.s3.put_object(
+            await self.s3.put_object(
                 Bucket=self.bucket_raw,
                 Key=file_key,
                 Body=file_bytes,
