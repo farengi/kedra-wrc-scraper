@@ -37,7 +37,7 @@ ADDONS = {}
 USER_AGENT = "kedra-wrc-scraper/0.1"
 
 # Obey robots.txt rules
-ROBOTSTXT_OBEY = True #
+ROBOTSTXT_OBEY = False #
 
 # Concurrency and throttling settings
 #CONCURRENT_REQUESTS = 16

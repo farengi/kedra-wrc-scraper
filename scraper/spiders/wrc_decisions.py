@@ -196,7 +196,7 @@ class WrcDecisionsSpider(scrapy.Spider):
         )
 
         self.records_failed += 1
-        yield DecisionItem(**record_meta)
+        yield from self.parse_document(response, record_meta)
 
     def parse_document(self, response, record_meta):
         self.records_scraped += 1
