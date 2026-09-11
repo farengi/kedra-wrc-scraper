@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 import scrapy
 from scrapy.exceptions import CloseSpider
 from scrapy.http import FormRequest
@@ -131,7 +132,7 @@ class WrcDecisionsSpider(scrapy.Spider):
             if detail_url:
                 yield scrapy.Request(
                     detail_url,
-                    callback=self.parse_document,
+                    callback=self.parse_detail_page,
                     cb_kwargs={"record_meta": record_meta},
                     errback=self.handle_download_error,
                 )
@@ -152,6 +153,50 @@ class WrcDecisionsSpider(scrapy.Spider):
         next_page = response.css("a.next::attr(href)").get()
         if next_page:
             yield response.follow(next_page, callback=self.parse_results)
+
+
+    def _is_document_url(self, url):
+        path = urlsplit(url).path.lower()
+        return path.endswith((".pdf", ".doc", ".docx"))
+
+
+    def parse_detail_page(self, response, record_meta):
+        # The search result always points to an HTML case page.
+        document_link = next(
+            (
+                href
+                for href in response.css("div.content a::attr(href)").getall()
+                if self._is_document_url(response.urljoin(href))
+            ),
+            None,
+        )
+
+        if document_link:
+            document_url = response.urljoin(document_link)
+
+            yield scrapy.Request(
+                document_url,
+                callback=self.parse_document,
+                cb_kwargs={"record_meta": record_meta},
+                errback=self.handle_download_error,
+            )
+            return
+
+        json_logger.warning(
+            "No document link found on detail page",
+            extra={"extra_data": {
+                "event": "download_failed",
+                "partition_date": self.partition_date,
+                "body": self.body,
+                "identifier": record_meta.get("identifier"),
+                "url": response.url,
+                "error_code": None,
+                "reason": "missing document link",
+            }},
+        )
+
+        self.records_failed += 1
+        yield DecisionItem(**record_meta)
 
     def parse_document(self, response, record_meta):
         self.records_scraped += 1

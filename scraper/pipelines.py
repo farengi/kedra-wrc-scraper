@@ -62,7 +62,10 @@ class MongoPipeline:
                 "body": document.get("body"),
                 "identifier": document.get("identifier"),
                 "error": str(e),
-            }})
+            }}
+            )
+            raise e  # Re-raise the exception to ensure the item is not silently dropped
+
 
         return item
         
@@ -150,7 +153,7 @@ class MinioPipeline:
         adapter.pop("file_bytes", None)  # captured locally; strip immediately so no path can leak raw bytes into MongoPipeline
 
         if not file_bytes:
-            spider.logger.warning(
+            json_logger.warning(
                 f"No file downloaded for {adapter.get('identifier')}, skipping upload"
             )
             return item
@@ -171,7 +174,7 @@ class MinioPipeline:
         file_hash = hashlib.sha256(file_bytes).hexdigest()
 
         if existing and existing.get("file_hash") == file_hash:
-            spider.logger.info(f"Unchanged, skipping upload for {adapter['identifier']}")
+            json_logger.info(f"Unchanged, skipping upload for {adapter['identifier']}")
             adapter["file_path"] = existing.get("file_path")
             adapter["file_hash"] = file_hash
             return item
@@ -190,7 +193,7 @@ class MinioPipeline:
                 ContentType=content_type,
             )
         except ClientError as e:
-            spider.logger.warning(f"Failed to upload {file_key} to MinIO: {e}")
+            json_logger.warning(f"Failed to upload {file_key} to MinIO: {e}")
             return item
 
         adapter["file_path"] = file_key

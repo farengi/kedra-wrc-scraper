@@ -85,9 +85,8 @@ works end to end without manual setup.
 The spider and the transform script use the shared structured JSON logger (`log_utils.JsonFormatter`)
 for their main events and summaries — spider start, extraction/download failures, and a `run_summary`
 event (`records_found`, `records_scraped`, `records_failed`) at close, so "did this partition actually
-work" is a log query, not a guess. Some pipeline-level messages (e.g. "no file downloaded", "unchanged,
-skipping upload") still go through Scrapy's own text logger rather than the JSON one and should be
-migrated for fully uniform structured logging. `tests/` covers the parts most likely to break silently:
+work" is a log query, not a guess. Pipeline messages use the same structured JSON logger as the spider.
+`tests/` covers the parts most likely to break silently:
 partition-boundary math (including a leap-year case), the hash-compare upload/skip decision, PDF
 passthrough vs. HTML cleaning, and spider argument validation.
 
